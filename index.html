@@ -1,0 +1,2071 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetro-Survivors (18행 보드 복원 & 블록 영구 보존 버그픽스 에디션)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #111318;
+            color: #ffffff;
+            font-family: 'Malgun Gothic', -apple-system, BlinkMacSystemFont, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-wrapper {
+            position: relative;
+            width: 850px;
+            height: 540px;
+            box-shadow: 0 15px 45px rgba(0, 0, 0, 0.9);
+            border: 2px solid #2a2e38;
+            overflow: hidden;
+            background-color: #6d7524;
+        }
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+
+        /* 모달 오버레이 */
+        .modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.78);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
+        .modal-box {
+            background: #2b2e3b;
+            border: 4px solid #c8a24b;
+            border-radius: 8px;
+            padding: 18px 22px;
+            width: 530px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.85);
+            text-align: center;
+        }
+        .modal-title {
+            font-size: 25px;
+            font-weight: 900;
+            color: #ffd700;
+            text-shadow: 2px 2px 0 #000;
+            margin-bottom: 5px;
+            letter-spacing: 1px;
+        }
+        .modal-subtitle {
+            font-size: 13px;
+            color: #d0d7de;
+            margin-bottom: 14px;
+        }
+        .choice-list {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+        }
+        .choice-card {
+            display: flex;
+            align-items: center;
+            background: #3b4052;
+            border: 2px solid #6c738a;
+            border-radius: 6px;
+            padding: 9px 13px;
+            cursor: pointer;
+            transition: transform 0.1s, border-color 0.1s, background 0.1s;
+            text-align: left;
+        }
+        .choice-card:hover {
+            background: #4a5168;
+            border-color: #ffd700;
+            transform: scale(1.02);
+        }
+        .choice-icon {
+            width: 44px;
+            height: 44px;
+            background: #232630;
+            border: 2px solid #8e96aa;
+            border-radius: 4px;
+            margin-right: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .choice-info {
+            flex: 1;
+        }
+        .choice-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3px;
+        }
+        .choice-name {
+            font-size: 15px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #000;
+        }
+        .choice-badge {
+            font-size: 11px;
+            font-weight: bold;
+            color: #ffd700;
+            background: rgba(0,0,0,0.45);
+            padding: 2px 7px;
+            border-radius: 4px;
+        }
+        .choice-desc {
+            font-size: 12px;
+            color: #c9d1d9;
+            line-height: 1.3;
+        }
+
+        #controls-guide {
+            margin-top: 8px;
+            color: #adbac7;
+            font-size: 12px;
+            text-align: center;
+            line-height: 1.55;
+        }
+        .kbadge {
+            display: inline-block;
+            background: #22272e;
+            border: 1px solid #444c56;
+            border-radius: 4px;
+            padding: 1px 6px;
+            color: #ffd700;
+            font-family: monospace;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <canvas id="gameCanvas" width="850" height="540"></canvas>
+
+    <!-- 시작 무기 선택 & 레벨업 모달 -->
+    <div id="itemModal" class="modal-overlay">
+        <div class="modal-box">
+            <div id="modalTitle" class="modal-title">시작 무기 선택</div>
+            <div id="modalSub" class="modal-subtitle">전투를 시작할 첫 번째 주 무기를 선택하세요! (숫자키 1, 2, 3, 4 또는 클릭)</div>
+            <div id="choiceContainer" class="choice-list"></div>
+        </div>
+    </div>
+</div>
+
+<div id="controls-guide">
+    🕹️ <strong>기사 이동:</strong> <span class="kbadge">W</span><span class="kbadge">A</span><span class="kbadge">S</span><span class="kbadge">D</span> &nbsp;|&nbsp;
+    🚩 <strong>요새 화면 중앙 배치:</strong> <span class="kbadge">Q</span> (시야 정중앙 자동 정렬!)<br>
+    🧱 <strong>열 선택:</strong> <span class="kbadge">←</span> <span class="kbadge">→</span> 또는 <span class="kbadge">숫자 1~0</span> &nbsp;|&nbsp;
+    ⚡ <strong>소프트드롭:</strong> <span class="kbadge">↓</span> &nbsp;|&nbsp;
+    💥 <strong>하드드롭:</strong> <span class="kbadge">Space</span> &nbsp;|&nbsp;
+    🔄 <strong>회전:</strong> <span class="kbadge">↑</span>/<span class="kbadge">X</span>(시계) <span class="kbadge">Ctrl</span>/<span class="kbadge">Z</span>(반시계) <span class="kbadge">V</span>(180도) &nbsp;|&nbsp;
+    📦 <strong>홀드:</strong> <span class="kbadge">Shift</span>/<span class="kbadge">C</span>
+</div>
+
+<script>
+// =========================================================================
+// 1. 사운드 엔진
+// =========================================================================
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioContext();
+
+function playSfx(type) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+
+    if (type === 'hit') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(90, now + 0.06);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.06);
+        osc.start(now);
+        osc.stop(now + 0.06);
+    } else if (type === 'whip') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(140, now + 0.11);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.11);
+        osc.start(now);
+        osc.stop(now + 0.11);
+    } else if (type === 'thunder') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(780, now);
+        osc.frequency.exponentialRampToValueAtTime(55, now + 0.22);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.22);
+    } else if (type === 'gem') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1046, now);
+        osc.frequency.exponentialRampToValueAtTime(1760, now + 0.07);
+        gain.gain.setValueAtTime(0.13, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.07);
+        osc.start(now);
+        osc.stop(now + 0.07);
+    } else if (type === 'hold') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(480, now);
+        osc.frequency.setValueAtTime(720, now + 0.06);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+    } else if (type === 'deploy') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(240, now);
+        osc.frequency.linearRampToValueAtTime(520, now + 0.16);
+        gain.gain.setValueAtTime(0.24, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.24);
+        osc.start(now);
+        osc.stop(now + 0.24);
+    } else if (type === 'levelup') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(330, now);
+        osc.frequency.setValueAtTime(440, now + 0.08);
+        osc.frequency.setValueAtTime(660, now + 0.16);
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
+    } else if (type === 'crush') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(130, now);
+        osc.frequency.exponentialRampToValueAtTime(32, now + 0.28);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.28);
+        osc.start(now);
+        osc.stop(now + 0.28);
+    }
+}
+
+// =========================================================================
+// 2. 무기(10종) & 악세사리(9종) DB
+// =========================================================================
+const ITEM_DB = {
+    whip: {
+        id: 'whip', category: 'weapon', name: '가죽 채찍 (Whip)',
+        desc: '좌우로 거대한 수평 참격을 날립니다. 레벨업할수록 범위와 참격 수가 증가합니다.',
+        drawIcon: (c) => {
+            c.strokeStyle = '#d88b42'; c.lineWidth = 3;
+            c.beginPath(); c.arc(21, 21, 11, 0.3, Math.PI * 1.4); c.stroke();
+            c.fillStyle = '#6e3b14'; c.fillRect(26, 26, 5, 9);
+        }
+    },
+    bible: {
+        id: 'bible', category: 'weapon', name: '킹 바이블 (King Bible)',
+        desc: '성경책이 캐릭터 주위를 고속 공전하며 다가오는 적들을 갈아버립니다.',
+        drawIcon: (c) => {
+            c.fillStyle = '#0d47a1'; c.fillRect(11, 8, 20, 26);
+            c.strokeStyle = '#90caf9'; c.lineWidth = 1.5; c.strokeRect(11, 8, 20, 26);
+            c.fillStyle = '#ffffff'; c.fillRect(19, 13, 4, 16); c.fillRect(15, 17, 12, 4);
+        }
+    },
+    wand: {
+        id: 'wand', category: 'weapon', name: '매직 완드 (Magic Wand)',
+        desc: '가장 가까운 적에게 유도 마법탄을 연사합니다.',
+        drawIcon: (c) => {
+            c.strokeStyle = '#8d6e63'; c.lineWidth = 4;
+            c.beginPath(); c.moveTo(10, 32); c.lineTo(28, 14); c.stroke();
+            c.fillStyle = '#00e5ff'; c.beginPath(); c.arc(30, 12, 6, 0, Math.PI*2); c.fill();
+        }
+    },
+    axe: {
+        id: 'axe', category: 'weapon', name: '데스 액스 (Axe)',
+        desc: '높은 포물선을 그리며 다수의 적을 꿰뚫는 초대형 단두대 도끼를 투척합니다.',
+        drawIcon: (c) => {
+            c.strokeStyle = '#795548'; c.lineWidth = 3;
+            c.beginPath(); c.moveTo(12, 34); c.lineTo(30, 10); c.stroke();
+            c.fillStyle = '#cfd8dc';
+            c.beginPath(); c.arc(26, 15, 10, -0.6, 1.4); c.lineTo(22, 15); c.fill();
+        }
+    },
+    knife: {
+        id: 'knife', category: 'weapon', name: '투척 단검 (Knife)',
+        desc: '바라보는 방향으로 날카로운 단검 탄막을 쏟아냅니다.',
+        drawIcon: (c) => {
+            c.fillStyle = '#ffffff';
+            c.beginPath(); c.moveTo(33, 9); c.lineTo(17, 21); c.lineTo(21, 25); c.closePath(); c.fill();
+            c.fillStyle = '#ffca28'; c.fillRect(15, 21, 6, 3);
+            c.fillStyle = '#5d4037'; c.fillRect(10, 26, 5, 5);
+        }
+    },
+    firewand: {
+        id: 'firewand', category: 'weapon', name: '파이어 완드 (Fire Wand)',
+        desc: '초고화력 운석 화염구를 부채꼴로 발사하여 적 무리를 소각합니다.',
+        drawIcon: (c) => {
+            c.fillStyle = '#ff3d00';
+            c.beginPath(); c.arc(21, 23, 9, 0, Math.PI*2); c.fill();
+            c.fillStyle = '#ffea00';
+            c.beginPath(); c.arc(21, 24, 5, 0, Math.PI*2); c.fill();
+        }
+    },
+    garlic: {
+        id: 'garlic', category: 'weapon', name: '마늘 결계 (Garlic)',
+        desc: '캐릭터 주변에 상시 성스러운 결계를 펼쳐 접근하는 적에게 지속 피해와 넉백을 줍니다!',
+        drawIcon: (c) => {
+            c.fillStyle = '#f5f5f5';
+            c.beginPath(); c.arc(21, 24, 10, 0, Math.PI*2); c.fill();
+            c.fillStyle = '#c5e1a5';
+            c.beginPath(); c.moveTo(17, 15); c.lineTo(21, 6); c.lineTo(25, 15); c.fill();
+        }
+    },
+    cross: {
+        id: 'cross', category: 'weapon', name: '부메랑 십자가 (Cross)',
+        desc: '적을 향해 날아갔다 뒤로 되돌아오며 경로상의 모든 적을 무한 관통합니다!',
+        drawIcon: (c) => {
+            c.fillStyle = '#ffd700';
+            c.fillRect(18, 7, 6, 28); c.fillRect(9, 16, 24, 6);
+            c.strokeStyle = '#ffffff'; c.lineWidth = 1; c.strokeRect(18, 7, 6, 28);
+        }
+    },
+    lightning: {
+        id: 'lightning', category: 'weapon', name: '번개 반지 (Lightning Ring)',
+        desc: '무작위 적들의 머리 위에 하늘에서 거대한 벼락을 내려 광역 폭발을 일으킵니다!',
+        drawIcon: (c) => {
+            c.strokeStyle = '#00e5ff'; c.lineWidth = 3;
+            c.beginPath(); c.arc(21, 23, 10, 0, Math.PI*2); c.stroke();
+            c.fillStyle = '#ffea00';
+            c.beginPath(); c.moveTo(23, 6); c.lineTo(15, 18); c.lineTo(22, 18); c.lineTo(18, 30); c.lineTo(27, 16); c.lineTo(21, 16); c.fill();
+        }
+    },
+    santawater: {
+        id: 'santawater', category: 'weapon', name: '성수 (Santa Water)',
+        desc: '주변 바닥에 푸른 화염 성수 장판을 투하하여 밟는 모든 적을 녹여버립니다!',
+        drawIcon: (c) => {
+            c.fillStyle = '#29b6f6';
+            c.beginPath(); c.arc(21, 25, 9, 0, Math.PI*2); c.fill();
+            c.fillStyle = '#e1f5fe'; c.fillRect(18, 10, 6, 7);
+            c.fillStyle = '#ffb300'; c.fillRect(17, 8, 8, 3);
+        }
+    },
+
+    candelabrador: {
+        id: 'candelabrador', category: 'accessory', name: '황금 촛대 (Candelabrador)',
+        desc: '모든 무기와 장판의 공격 크기(스케일)가 레벨당 +25% 거대해집니다!',
+        drawIcon: (c) => {
+            c.fillStyle = '#ffd700';
+            c.fillRect(19, 14, 4, 20); c.fillRect(11, 18, 20, 3);
+            c.fillRect(11, 12, 3, 7); c.fillRect(28, 12, 3, 7);
+            c.fillStyle = '#ff3d00';
+            c.beginPath(); c.arc(12.5, 9, 3, 0, Math.PI*2); c.arc(21, 9, 3.5, 0, Math.PI*2); c.arc(29.5, 9, 3, 0, Math.PI*2); c.fill();
+        }
+    },
+    duplicator: {
+        id: 'duplicator', category: 'accessory', name: '복제 반지 (Duplicator)',
+        desc: '모든 무기의 발사체 개수와 벼락·성수 투하 수가 레벨당 +1개씩 추가됩니다!',
+        drawIcon: (c) => {
+            c.strokeStyle = '#ffd700'; c.lineWidth = 3;
+            c.beginPath(); c.arc(17, 22, 8, 0, Math.PI*2); c.stroke();
+            c.strokeStyle = '#00e5ff'; c.lineWidth = 3;
+            c.beginPath(); c.arc(25, 20, 8, 0, Math.PI*2); c.stroke();
+        }
+    },
+    tome: {
+        id: 'tome', category: 'accessory', name: '고대 마도서 (Empty Tome)',
+        desc: '모든 무기의 공격 쿨타임이 레벨당 12% 감소하여 연사력이 폭발합니다.',
+        drawIcon: (c) => {
+            c.fillStyle = '#b71c1c'; c.fillRect(11, 8, 20, 26);
+            c.strokeStyle = '#ff8a80'; c.lineWidth = 1.5; c.strokeRect(11, 8, 20, 26);
+            c.fillStyle = '#ffd54f'; c.fillRect(16, 15, 10, 10);
+        }
+    },
+    spinach: {
+        id: 'spinach', category: 'accessory', name: '파워 시금치 (Spinach)',
+        desc: '모든 공격의 데미지가 레벨당 20% 증가합니다.',
+        drawIcon: (c) => {
+            c.fillStyle = '#2e7d32';
+            c.beginPath(); c.ellipse(21, 20, 9, 12, 0.3, 0, Math.PI*2); c.fill();
+            c.fillStyle = '#81c784';
+            c.fillRect(19, 14, 3, 14);
+        }
+    },
+    attractorb: {
+        id: 'attractorb', category: 'accessory', name: '자석 보주 (Attractorb)',
+        desc: '경험치 보석을 끌어당기는 자석 범위가 레벨당 +50% 넓어집니다!',
+        drawIcon: (c) => {
+            c.fillStyle = '#d500f9';
+            c.beginPath(); c.arc(21, 21, 11, 0, Math.PI*2); c.fill();
+            c.fillStyle = '#f3e5f5';
+            c.beginPath(); c.arc(18, 18, 4, 0, Math.PI*2); c.fill();
+        }
+    },
+    bracer: {
+        id: 'bracer', category: 'accessory', name: '가속 건틀릿 (Bracer)',
+        desc: '투사체 탄속과 성경책 회전 속도가 레벨당 +20% 빨라집니다!',
+        drawIcon: (c) => {
+            c.fillStyle = '#ff9800'; c.fillRect(13, 12, 16, 18);
+            c.strokeStyle = '#ffe082'; c.lineWidth = 2; c.strokeRect(13, 12, 16, 18);
+        }
+    },
+    pummarola: {
+        id: 'pummarola', category: 'accessory', name: '생명의 성배 (Pummarola)',
+        desc: '매초마다 플레이어의 체력이 자동으로 지속 회복됩니다!',
+        drawIcon: (c) => {
+            c.fillStyle = '#ff1744';
+            c.beginPath(); c.arc(16, 18, 6, 0, Math.PI*2); c.arc(26, 18, 6, 0, Math.PI*2);
+            c.moveTo(10, 20); c.lineTo(21, 33); c.lineTo(32, 20); c.fill();
+            c.fillStyle = '#ffd700'; c.fillRect(19, 8, 4, 6);
+        }
+    },
+    wings: {
+        id: 'wings', category: 'accessory', name: '에르메스의 날개 (Wings)',
+        desc: '이동 속도가 레벨당 15% 빨라집니다.',
+        drawIcon: (c) => {
+            c.fillStyle = '#f5f5f5';
+            c.beginPath(); c.moveTo(10, 28); c.quadraticCurveTo(18, 10, 32, 12); c.quadraticCurveTo(24, 24, 10, 28); c.fill();
+        }
+    },
+    hollowheart: {
+        id: 'hollowheart', category: 'accessory', name: '생명의 심장 (Hollow Heart)',
+        desc: '최대 체력이 35 증가하고 체력을 즉시 회복합니다.',
+        drawIcon: (c) => {
+            c.fillStyle = '#e91e63';
+            c.beginPath(); c.arc(16, 17, 6, 0, Math.PI*2); c.arc(26, 17, 6, 0, Math.PI*2);
+            c.moveTo(10, 19); c.lineTo(21, 32); c.lineTo(32, 19); c.fill();
+        }
+    }
+};
+
+// =========================================================================
+// 3. 오픈월드 & [18행 보드 크기 복원] 설정
+// =========================================================================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const VIEW_W = 850;
+const VIEW_H = 540;
+const TOP_BAR_H = 22;
+
+const WORLD_W = 4000;
+const WORLD_H = 4000;
+const CELLSIZE = 25;
+
+// [보드 크기 18행으로 완벽 복원!]
+const MATRIX_COLS = 10;
+const MATRIX_ROWS = 18; // 폭 250px x 높이 450px!
+
+let matrixBoard = Array.from({ length: MATRIX_ROWS }, () => Array(MATRIX_COLS).fill(0));
+
+const player = {
+    x: WORLD_W / 2,
+    y: WORLD_H / 2,
+    baseSpeed: 3.2,
+    maxHp: 100,
+    hp: 100,
+    exp: 0,
+    nextExp: 5,
+    level: 1,
+    facingRight: true,
+    isMoving: false,
+    flash: 0,
+    weapons: {},
+    accessories: {}
+};
+
+// 시작 시 플레이어 화면 중심에 18행 요새가 화면 위아래 잘림 없이 정확히 들어오도록 배치!
+let matrixWorldX = player.x - (MATRIX_COLS * CELLSIZE / 2);
+let matrixWorldY = player.y - (MATRIX_ROWS * CELLSIZE / 2) + 16;
+
+const FIGURES = {
+    'I': [[1, 5, 9, 13], [4, 5, 6, 7]],
+    'Z': [[4, 5, 9, 10], [2, 6, 5, 9]],
+    'S': [[6, 7, 9, 10], [1, 5, 6, 10]],
+    'L': [[1, 2, 5, 9], [0, 4, 5, 6], [1, 5, 9, 8], [4, 5, 6, 10]],
+    'J': [[1, 2, 6, 10], [5, 6, 7, 9], [2, 10, 11, 6], [3, 5, 6, 7]],
+    'T': [[1, 4, 5, 6], [1, 4, 5, 9], [4, 5, 6, 9], [1, 5, 6, 9]],
+    'O': [[1, 2, 5, 6]]
+};
+const TYPES = ['I', 'Z', 'S', 'L', 'J', 'T', 'O'];
+
+const worldClusters = [];
+for (let i = 0; i < 900; i++) {
+    const cx = 40 + Math.random() * (WORLD_W - 80);
+    const cy = 40 + Math.random() * (WORLD_H - 80);
+    const isBrown = Math.random() < 0.45;
+    const pebbles = [];
+    const count = 3 + Math.floor(Math.random() * 5);
+    for (let j = 0; j < count; j++) {
+        pebbles.push({
+            dx: (Math.random() - 0.5) * 24,
+            dy: (Math.random() - 0.5) * 18,
+            w: 2 + Math.floor(Math.random() * 3),
+            h: 2 + Math.floor(Math.random() * 3)
+        });
+    }
+    worldClusters.push({ x: cx, y: cy, color: isBrown ? '#a88444' : '#b2b8b4', pebbles });
+}
+
+// =========================================================================
+// 4. 그래픽 렌더러
+// =========================================================================
+function drawOpenWorldBackground(camX, camY) {
+    ctx.fillStyle = '#6d7524';
+    ctx.fillRect(camX, camY, VIEW_W, VIEW_H);
+
+    ctx.strokeStyle = 'rgba(90, 98, 28, 0.35)';
+    ctx.lineWidth = 1;
+    const tileStep = 100;
+    const startX = Math.floor(camX / tileStep) * tileStep;
+    const startY = Math.floor(camY / tileStep) * tileStep;
+
+    ctx.beginPath();
+    for (let x = startX; x <= camX + VIEW_W; x += tileStep) {
+        ctx.moveTo(x, camY);
+        ctx.lineTo(x, camY + VIEW_H);
+    }
+    for (let y = startY; y <= camY + VIEW_H; y += tileStep) {
+        ctx.moveTo(camX, y);
+        ctx.lineTo(camX + VIEW_W, y);
+    }
+    ctx.stroke();
+
+    for (let i = 0; i < worldClusters.length; i++) {
+        const cl = worldClusters[i];
+        if (cl.x >= camX - 40 && cl.x <= camX + VIEW_W + 40 &&
+            cl.y >= camY - 40 && cl.y <= camY + VIEW_H + 40) {
+            ctx.fillStyle = cl.color;
+            for (let j = 0; j < cl.pebbles.length; j++) {
+                const p = cl.pebbles[j];
+                ctx.fillRect(Math.floor(cl.x + p.dx), Math.floor(cl.y + p.dy), p.w, p.h);
+            }
+        }
+    }
+
+    ctx.strokeStyle = '#ff334b';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(0, 0, WORLD_W, WORLD_H);
+}
+
+function drawFortressMatrix(boardX, boardY) {
+    const bw = MATRIX_COLS * CELLSIZE; // 250px
+    const bh = MATRIX_ROWS * CELLSIZE; // 450px
+
+    // 신비로운 황금빛 네온 외곽 테두리 (18행 전체 시인성 보장!)
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(boardX - 4, boardY - 4, bw + 8, bh + 8);
+
+    ctx.fillStyle = 'rgba(20, 25, 18, 0.52)';
+    ctx.fillRect(boardX, boardY, bw, bh);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = 1; c < MATRIX_COLS; c++) {
+        const lx = boardX + c * CELLSIZE;
+        ctx.moveTo(lx, boardY);
+        ctx.lineTo(lx, boardY + bh);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = '#4a504b';
+    ctx.fillRect(boardX - 8, boardY, 8, bh);
+    ctx.fillRect(boardX + bw, boardY, 8, bh);
+
+    ctx.fillStyle = '#8a918a';
+    ctx.fillRect(boardX - 10, boardY + bh, bw + 20, 6);
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(boardX - 10, boardY + bh, bw + 20, 6);
+
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = '#ffd700';
+    ctx.textAlign = 'center';
+    for (let c = 0; c < MATRIX_COLS; c++) {
+        const numLabel = (c === 9) ? '0' : `${c + 1}`;
+        ctx.fillText(numLabel, boardX + c * CELLSIZE + CELLSIZE / 2, boardY - 6);
+    }
+    ctx.textAlign = 'left';
+}
+
+function drawStoneTile(x, y, mode = 'placed') {
+    if (mode === 'ghost') {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x + 2, y + 2, CELLSIZE - 4, CELLSIZE - 4);
+        ctx.fillStyle = 'rgba(210, 220, 215, 0.22)';
+        ctx.fillRect(x + 2, y + 2, CELLSIZE - 4, CELLSIZE - 4);
+        return;
+    }
+
+    const isFalling = (mode === 'falling');
+    ctx.fillStyle = isFalling ? 'rgba(0, 0, 0, 0.38)' : 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(x + 2, y + 3, CELLSIZE - 2, CELLSIZE - 2);
+
+    ctx.fillStyle = isFalling ? '#a6aba8' : '#888c89';
+    ctx.fillRect(x + 1, y + 1, CELLSIZE - 2, CELLSIZE - 2);
+
+    ctx.fillStyle = '#6d7524';
+    ctx.fillRect(x + 1, y + 1, 2, 2);
+    ctx.fillRect(x + CELLSIZE - 3, y + 1, 2, 2);
+    ctx.fillRect(x + 1, y + CELLSIZE - 3, 2, 2);
+    ctx.fillRect(x + CELLSIZE - 3, y + CELLSIZE - 3, 2, 2);
+
+    ctx.fillStyle = isFalling ? '#c7ccc9' : '#abb0ad';
+    ctx.fillRect(x + 4, y + 2, CELLSIZE - 8, 2);
+
+    ctx.fillStyle = '#00e5ff';
+    ctx.fillRect(x + 10, y + 6, 5, 2);
+    ctx.fillRect(x + 11, y + 8, 3, 9);
+    ctx.fillRect(x + 8, y + 15, 9, 2);
+}
+
+function drawMiniTetro(ctx, type, cx, cy, cell = 9) {
+    if (!type) return;
+    const shape = FIGURES[type][0];
+    ctx.save();
+    ctx.translate(cx - cell * 2, cy - cell * 2);
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            if (shape.includes(i * 4 + j)) {
+                const x = j * cell;
+                const y = i * cell;
+                ctx.fillStyle = '#9ea3a0';
+                ctx.fillRect(x, y, cell - 1, cell - 1);
+                ctx.fillStyle = '#d0d7de';
+                ctx.fillRect(x + 1, y + 1, cell - 3, 2);
+            }
+        }
+    }
+    ctx.restore();
+}
+
+function drawHeroKnight(x, y, animFrame, isMoving, facingRight, flash) {
+    ctx.save();
+    ctx.translate(Math.floor(x), Math.floor(y));
+    if (!facingRight) ctx.scale(-1, 1);
+
+    if (flash > 0) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(0, -2, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        return;
+    }
+
+    const step = isMoving ? Math.sin(animFrame * 0.35) * 3.5 : 0;
+
+    ctx.fillStyle = '#9e1c1c';
+    ctx.fillRect(-8, -5, 6, 13);
+    ctx.fillStyle = '#d32f2f';
+    ctx.fillRect(-7, -3, 4, 10);
+
+    ctx.fillStyle = '#3e2723';
+    ctx.fillRect(-5, 6 + step, 3, 7);
+    ctx.fillRect(2, 6 - step, 3, 7);
+    ctx.fillStyle = '#795548';
+    ctx.fillRect(-6, 11 + step, 4, 3);
+    ctx.fillRect(2, 11 - step, 4, 3);
+
+    ctx.fillStyle = '#1565c0';
+    ctx.fillRect(-5, -4, 10, 11);
+    ctx.fillStyle = '#1e88e5';
+    ctx.fillRect(-3, -3, 6, 7);
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(-5, 3, 10, 2);
+    ctx.fillStyle = '#ffd54f';
+    ctx.fillRect(-1, 3, 3, 2);
+
+    ctx.fillStyle = '#ffccbc';
+    ctx.fillRect(-4, -11, 8, 7);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(-5, -14, 10, 4);
+    ctx.fillRect(-5, -11, 3, 4);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(1, -8, 2, 2);
+
+    ctx.fillStyle = '#cfd8dc';
+    ctx.fillRect(3, -3, 6, 8);
+    ctx.fillStyle = '#d32f2f';
+    ctx.fillRect(4, -2, 2, 3);
+    ctx.fillStyle = '#1976d2';
+    ctx.fillRect(6, 1, 2, 3);
+
+    ctx.strokeStyle = '#eceff1';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-4, 2);
+    ctx.lineTo(-16, 8);
+    ctx.stroke();
+    ctx.fillStyle = '#ffd54f';
+    ctx.fillRect(-6, 0, 3, 4);
+
+    ctx.restore();
+}
+
+function drawEnemyEntity(e, animFrame, px) {
+    ctx.save();
+    ctx.translate(Math.floor(e.x), Math.floor(e.y));
+    if (px < e.x) ctx.scale(-1, 1);
+
+    const sc = e.scale || 1;
+    ctx.scale(sc, sc);
+
+    if (e.flash > 0) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(0, -2, 11, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        return;
+    }
+
+    const run = Math.sin(animFrame * 0.3) * 3;
+
+    if (e.type === 'goblin' || e.type === 'boss') {
+        const skin = e.type === 'boss' ? '#d32f2f' : '#689f38';
+        ctx.fillStyle = '#4e342e';
+        ctx.fillRect(-5, 3 + run, 3, 7);
+        ctx.fillRect(2, 3 - run, 3, 7);
+        ctx.fillStyle = '#3e2723';
+        ctx.fillRect(-4, -4, 8, 8);
+        ctx.fillStyle = skin;
+        ctx.fillRect(-6, -3, 3, 5);
+        ctx.fillRect(4, -3, 4, 4);
+        ctx.fillRect(-4, -11, 8, 7);
+        ctx.beginPath();
+        ctx.moveTo(-4, -9); ctx.lineTo(-10, -12); ctx.lineTo(-4, -6);
+        ctx.moveTo(4, -9); ctx.lineTo(10, -12); ctx.lineTo(4, -6);
+        ctx.fill();
+        ctx.fillStyle = '#ffeb3b';
+        ctx.fillRect(1, -9, 2, 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(8, -1, e.type === 'boss' ? 8 : 5, -Math.PI * 0.5, Math.PI * 0.5);
+        ctx.closePath();
+        ctx.fill();
+    } else if (e.type === 'eye') {
+        const flap = Math.sin(animFrame * 0.38) * 6;
+        ctx.fillStyle = '#4a148c';
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(-12, -5 + flap); ctx.lineTo(-5, 3);
+        ctx.lineTo(5, 3); ctx.lineTo(12, -5 + flap); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#f5f5f5';
+        ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff1744';
+        ctx.beginPath(); ctx.arc(1.5, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+    } else if (e.type === 'skeleton') {
+        ctx.fillStyle = '#e0e0e0';
+        ctx.fillRect(-4, 4 + run, 2, 7);
+        ctx.fillRect(2, 4 - run, 2, 7);
+        ctx.fillRect(-3, -3, 6, 7);
+        ctx.fillStyle = '#212121';
+        ctx.fillRect(-2, -1, 4, 1);
+        ctx.fillRect(-2, 1, 4, 1);
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(0, -8, 5.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff1744';
+        ctx.fillRect(1, -9, 2, 2);
+        ctx.fillStyle = '#cfd8dc';
+        ctx.fillRect(5, -7, 2, 10);
+    } else if (e.type === 'mushroom') {
+        ctx.fillStyle = '#fff9c4';
+        ctx.fillRect(-4, -1, 8, 9);
+        ctx.fillStyle = '#d50000';
+        ctx.beginPath(); ctx.arc(0, -2, 9, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-5, -6, 2, 2); ctx.fillRect(1, -8, 3, 2);
+    }
+
+    ctx.restore();
+
+    if (e.type === 'boss') {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(e.x - 20, e.y - 28, 40, 5);
+        ctx.fillStyle = '#ff1744';
+        ctx.fillRect(e.x - 20, e.y - 28, 40 * Math.max(0, e.hp / e.maxHp), 5);
+    }
+}
+
+function drawCrystalGem(x, y, val) {
+    ctx.save();
+    ctx.translate(Math.floor(x), Math.floor(y));
+
+    const cMain = val === 1 ? '#8be9fd' : val === 2 ? '#50fa7b' : '#ff79c6';
+    const cEdge = val === 1 ? '#2979ff' : val === 2 ? '#00c853' : '#d500f9';
+
+    ctx.fillStyle = cEdge;
+    ctx.beginPath();
+    ctx.moveTo(0, -8); ctx.lineTo(6, -3); ctx.lineTo(5, 5);
+    ctx.lineTo(0, 8); ctx.lineTo(-5, 5); ctx.lineTo(-6, -3);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = cMain;
+    ctx.beginPath();
+    ctx.moveTo(0, -6); ctx.lineTo(4, -2); ctx.lineTo(3, 4);
+    ctx.lineTo(0, 6); ctx.lineTo(-3, 4); ctx.lineTo(-4, -2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-2, -4, 2, 5);
+
+    ctx.restore();
+}
+
+function drawKingBibleBook(x, y, scale = 1.0) {
+    ctx.save();
+    ctx.translate(Math.floor(x), Math.floor(y));
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(-8, -10, 16, 20);
+    ctx.fillStyle = '#1565c0';
+    ctx.fillRect(-6, -8, 12, 16);
+    ctx.strokeStyle = '#64b5f6';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-5, -7, 10, 14);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-1, -5, 2, 10);
+    ctx.fillRect(-3, -2, 6, 2);
+
+    ctx.restore();
+}
+
+// =========================================================================
+// 5. 18행 테트리스 블록 & [블록 영구 보존 버그픽스] 시스템
+// =========================================================================
+let nextTetroType = TYPES[Math.floor(Math.random() * TYPES.length)];
+let holdTetroType = null;
+let canHoldThisTurn = true;
+
+class FallingTetramino {
+    constructor(forcedType = null) {
+        this.type = forcedType || nextTetroType;
+        if (!forcedType) {
+            nextTetroType = TYPES[Math.floor(Math.random() * TYPES.length)];
+        }
+        this.shapes = FIGURES[this.type];
+        this.rotation = 0;
+        this.c = 3;
+        this.r = 0;
+
+        // [핵심 버그픽스!] 새 블록 스폰 시 맨 윗줄과 겹치더라도 보드를 날리지 않고 스폰 위치의 타일만 안전하게 밀어냄!
+        if (this.intersects(matrixBoard)) {
+            const cells = this.currentCells();
+            cells.forEach(cell => {
+                if (cell.r >= 0 && cell.r < MATRIX_ROWS && cell.c >= 0 && cell.c < MATRIX_COLS) {
+                    matrixBoard[cell.r][cell.c] = 0; // 겹치는 부분만 정리하여 보드 전체 증발 완벽 방지!
+                }
+            });
+        }
+    }
+
+    currentCells(oc = 0, or_ = 0, rot = this.rotation) {
+        const cells = [];
+        const shape = this.shapes[rot];
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                if (shape.includes(i * 4 + j)) {
+                    cells.push({ c: this.c + j + oc, r: this.r + i + or_ });
+                }
+            }
+        }
+        return cells;
+    }
+
+    rotate(board, dir = 1) {
+        const len = this.shapes.length;
+        const nextRot = (this.rotation + dir + len * 4) % len;
+        if (!this.intersects(board, 0, 0, nextRot)) {
+            this.rotation = nextRot;
+        } else if (!this.intersects(board, -1, 0, nextRot)) {
+            this.c--;
+            this.rotation = nextRot;
+        } else if (!this.intersects(board, 1, 0, nextRot)) {
+            this.c++;
+            this.rotation = nextRot;
+        }
+    }
+
+    intersects(board, oc = 0, or_ = 0, rot = this.rotation) {
+        const cells = this.currentCells(oc, or_, rot);
+        for (let cell of cells) {
+            if (cell.c < 0 || cell.c >= MATRIX_COLS) return true;
+            if (cell.r >= MATRIX_ROWS) return true;
+            if (cell.r >= 0 && board[cell.r][cell.c] !== 0) return true;
+        }
+        return false;
+    }
+
+    getGhostR(board) {
+        let dr = 0;
+        while (!this.intersects(board, 0, dr + 1)) {
+            dr++;
+        }
+        return this.r + dr;
+    }
+}
+
+let currentTetro = new FallingTetramino();
+
+function triggerHoldTetromino() {
+    if (!canHoldThisTurn || !currentTetro) return;
+    playSfx('hold');
+    const curType = currentTetro.type;
+    if (holdTetroType === null) {
+        holdTetroType = curType;
+        currentTetro = new FallingTetramino();
+    } else {
+        const temp = holdTetroType;
+        holdTetroType = curType;
+        currentTetro = new FallingTetramino(temp);
+    }
+    canHoldThisTurn = false;
+}
+
+// [Q 키] 18행(450px) 보드가 화면 540px 높이에 위아래 잘림 없이 100% 쏙 들어오도록 정렬!
+function deployMatrixAtPlayer() {
+    playSfx('deploy');
+    const bw = MATRIX_COLS * CELLSIZE; // 250px
+    const bh = MATRIX_ROWS * CELLSIZE; // 450px
+
+    matrixWorldX = Math.max(50, Math.min(WORLD_W - bw - 50, player.x - bw / 2));
+    // 화면 중심에 보드가 오도록 배치 (위아래 45px씩 여백이 생겨 HUD와 겹치지 않고 온전히 보임!)
+    matrixWorldY = Math.max(50, Math.min(WORLD_H - bh - 50, player.y - bh / 2 + 16));
+
+    enemies.forEach(e => {
+        const d = Math.hypot(e.x - player.x, e.y - player.y);
+        if (d < 180 && d > 0) {
+            e.x += ((e.x - player.x) / d) * 70;
+            e.y += ((e.y - player.y) / d) * 70;
+            e.flash = 6;
+        }
+    });
+    damageTexts.push(new DamageText(player.x, player.y - 35, 'FORTRESS CENTERED!', '#ffd700', 16));
+}
+
+class DamageText {
+    constructor(x, y, text, color = '#ffffff', size = 14) {
+        this.x = x + (Math.random() - 0.5) * 16;
+        this.y = y - 10;
+        this.text = text;
+        this.color = color;
+        this.size = size;
+        this.life = 30;
+    }
+    update() {
+        this.y -= 1.2;
+        this.life--;
+    }
+    draw() {
+        ctx.font = `bold ${this.size}px monospace`;
+        ctx.fillStyle = '#000000';
+        ctx.fillText(this.text, this.x + 1, this.y + 1);
+        ctx.fillStyle = this.color;
+        ctx.fillText(this.text, this.x, this.y);
+    }
+}
+
+// =========================================================================
+// 6. 상태 및 조작 이벤트
+// =========================================================================
+let enemies = [];
+let projectiles = [];
+let whipEffects = [];
+let lightningStrikes = [];
+let waterZones = [];
+let gems = [];
+let damageTexts = [];
+
+let isPaused = true;
+let isGameOver = false;
+let animFrame = 0;
+let gameFrames = 0;
+let tetroTimer = 0;
+let kills = 0;
+let linesCleared = 0;
+let shakeTime = 0;
+let lastBossMinute = 0;
+
+const weaponTimers = {
+    whip: 0, wand: 0, axe: 0, knife: 0, firewand: 0,
+    cross: 0, lightning: 0, santawater: 0
+};
+
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const modal = document.getElementById('itemModal');
+    if (modal.style.display !== 'none') {
+        if (e.code === 'Digit1' && currentChoices[0]) selectItem(currentChoices[0]);
+        if (e.code === 'Digit2' && currentChoices[1]) selectItem(currentChoices[1]);
+        if (e.code === 'Digit3' && currentChoices[2]) selectItem(currentChoices[2]);
+        if (e.code === 'Digit4' && currentChoices[3]) selectItem(currentChoices[3]);
+        return;
+    }
+
+    if (isGameOver && e.code === 'KeyR') {
+        location.reload();
+        return;
+    }
+
+    if (e.code === 'KeyP') {
+        isPaused = !isPaused;
+    }
+
+    if (e.code === 'KeyQ') {
+        deployMatrixAtPlayer();
+        return;
+    }
+
+    if (!isPaused && !isGameOver && currentTetro) {
+        const laneKeys = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'];
+        const laneIdx = laneKeys.indexOf(e.code);
+        if (laneIdx !== -1) {
+            e.preventDefault();
+            const targetCol = Math.max(0, Math.min(MATRIX_COLS - 2, laneIdx));
+            const oldC = currentTetro.c;
+            currentTetro.c = targetCol;
+            if (currentTetro.intersects(matrixBoard)) {
+                currentTetro.c = oldC;
+            }
+            return;
+        }
+
+        if (e.code === 'ArrowLeft') {
+            e.preventDefault();
+            if (!currentTetro.intersects(matrixBoard, -1, 0)) currentTetro.c--;
+        } else if (e.code === 'ArrowRight') {
+            e.preventDefault();
+            if (!currentTetro.intersects(matrixBoard, 1, 0)) currentTetro.c++;
+        } else if (e.code === 'Space') {
+            e.preventDefault();
+            while (!currentTetro.intersects(matrixBoard, 0, 1)) currentTetro.r++;
+            tetroTimer = 999;
+        } else if (e.code === 'ArrowUp' || e.code === 'KeyX') {
+            e.preventDefault();
+            currentTetro.rotate(matrixBoard, 1);
+        } else if (e.code === 'ControlLeft' || e.code === 'ControlRight' || e.code === 'KeyZ') {
+            e.preventDefault();
+            currentTetro.rotate(matrixBoard, -1);
+        } else if (e.code === 'KeyV') {
+            e.preventDefault();
+            currentTetro.rotate(matrixBoard, 2);
+        } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyC') {
+            e.preventDefault();
+            triggerHoldTetromino();
+        }
+    }
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (mx >= VIEW_W - 45 && mx <= VIEW_W - 10 && my >= 55 && my <= 105) {
+        if (document.getElementById('itemModal').style.display === 'none') {
+            isPaused = !isPaused;
+        }
+    }
+    if (mx >= 6 && mx <= 64 && my >= 90 && my <= 155) {
+        if (!isPaused && !isGameOver) triggerHoldTetromino();
+    }
+});
+
+// =========================================================================
+// 7. 모달 시스템
+// =========================================================================
+let currentChoices = [];
+
+function openItemModal(isStart = false) {
+    isPaused = true;
+    const modal = document.getElementById('itemModal');
+    const title = document.getElementById('modalTitle');
+    const sub = document.getElementById('modalSub');
+    const container = document.getElementById('choiceContainer');
+    container.innerHTML = '';
+
+    let pool = Object.values(ITEM_DB);
+    if (isStart) {
+        title.textContent = '⚔️ 시작 무기 선택 (10종)';
+        sub.textContent = '전투를 시작할 첫 번째 주 무기를 선택하세요! (클릭 또는 숫자키 1~4)';
+        pool = pool.filter(it => it.category === 'weapon');
+    } else {
+        playSfx('levelup');
+        title.textContent = `✨ LEVEL UP! (Lv.${player.level})`;
+        sub.textContent = '총 19종의 무기/악세사리 중 하나를 선택해 강화하세요! (숫자키 1~4)';
+    }
+
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    currentChoices = shuffled.slice(0, 4);
+
+    currentChoices.forEach((item, idx) => {
+        const curLv = (item.category === 'weapon' ? player.weapons[item.id] : player.accessories[item.id]) || 0;
+        const badgeText = curLv === 0 ? '신규 획득!' : `Lv.${curLv} ➔ Lv.${curLv + 1}`;
+
+        const card = document.createElement('div');
+        card.className = 'choice-card';
+        card.onclick = () => selectItem(item);
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'choice-icon';
+        const iconCanvas = document.createElement('canvas');
+        iconCanvas.width = 42;
+        iconCanvas.height = 42;
+        item.drawIcon(iconCanvas.getContext('2d'));
+        iconWrap.appendChild(iconCanvas);
+
+        const info = document.createElement('div');
+        info.className = 'choice-info';
+        info.innerHTML = `
+            <div class="choice-header">
+                <span class="choice-name">[${idx + 1}] ${item.name}</span>
+                <span class="choice-badge">${badgeText}</span>
+            </div>
+            <div class="choice-desc">${item.desc}</div>
+        `;
+
+        card.appendChild(iconWrap);
+        card.appendChild(info);
+        container.appendChild(card);
+    });
+
+    modal.style.display = 'flex';
+}
+
+function selectItem(item) {
+    if (item.category === 'weapon') {
+        player.weapons[item.id] = (player.weapons[item.id] || 0) + 1;
+    } else {
+        player.accessories[item.id] = (player.accessories[item.id] || 0) + 1;
+        if (item.id === 'hollowheart') {
+            player.maxHp += 35;
+            player.hp = Math.min(player.maxHp, player.hp + 45);
+        }
+    }
+    document.getElementById('itemModal').style.display = 'none';
+    isPaused = false;
+}
+
+function isMonsterBlocked(wx, wy) {
+    const mc = Math.floor((wx - matrixWorldX) / CELLSIZE);
+    const mr = Math.floor((wy - matrixWorldY) / CELLSIZE);
+    if (mr >= 0 && mr < MATRIX_ROWS && mc >= 0 && mc < MATRIX_COLS) {
+        return matrixBoard[mr][mc] !== 0;
+    }
+    return false;
+}
+
+// =========================================================================
+// 8. 메인 업데이트 루프 (블록 영구 보존 버그 완벽 수정!)
+// =========================================================================
+function update() {
+    if (isPaused || isGameOver) return;
+
+    animFrame++;
+    gameFrames++;
+    if (player.flash > 0) player.flash--;
+
+    const elapsedSec = gameFrames / 60;
+
+    const dmgMult = 1 + (player.accessories.spinach || 0) * 0.20;
+    const cdMult = Math.max(0.28, 1 - (player.accessories.tome || 0) * 0.12);
+    const moveSpeed = player.baseSpeed * (1 + (player.accessories.wings || 0) * 0.15);
+    const areaBonus = 1 + (player.accessories.candelabrador || 0) * 0.25;
+    const bonusCount = player.accessories.duplicator || 0;
+    const speedBonus = 1 + (player.accessories.bracer || 0) * 0.20;
+    const magnetRange = 125 * (1 + (player.accessories.attractorb || 0) * 0.50);
+
+    if (player.accessories.pummarola && gameFrames % 60 === 0) {
+        player.hp = Math.min(player.maxHp, player.hp + player.accessories.pummarola * 1.2);
+    }
+
+    // 1. 플레이어 WASD 이동
+    let dx = 0, dy = 0;
+    if (keys['KeyA']) dx -= 1;
+    if (keys['KeyD']) dx += 1;
+    if (keys['KeyW']) dy -= 1;
+    if (keys['KeyS']) dy += 1;
+
+    player.isMoving = (dx !== 0 || dy !== 0);
+    if (dx > 0) player.facingRight = true;
+    else if (dx < 0) player.facingRight = false;
+
+    if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+
+    player.x = Math.max(25, Math.min(WORLD_W - 25, player.x + dx * moveSpeed));
+    player.y = Math.max(25, Math.min(WORLD_H - 25, player.y + dy * moveSpeed));
+
+    // 2. 테트리스 18행 낙하 & 압사 & 라인 클리어 (블록 사라짐 버그 완벽 제거!)
+    const fallInterval = keys['ArrowDown'] ? 4 : 34;
+
+    tetroTimer++;
+    if (tetroTimer >= fallInterval) {
+        tetroTimer = 0;
+        if (!currentTetro.intersects(matrixBoard, 0, 1)) {
+            currentTetro.r++;
+        } else {
+            // 보드에 블록 착지 및 고정
+            const cells = currentTetro.currentCells();
+            cells.forEach(c => {
+                if (c.r >= 0 && c.r < MATRIX_ROWS && c.c >= 0 && c.c < MATRIX_COLS) {
+                    matrixBoard[c.r][c.c] = 1;
+                }
+            });
+
+            // 몬스터 압사
+            let crushed = false;
+            cells.forEach(c => {
+                const wx = matrixWorldX + c.c * CELLSIZE;
+                const wy = matrixWorldY + c.r * CELLSIZE;
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const e = enemies[i];
+                    if (e.x >= wx - 16 && e.x <= wx + CELLSIZE + 16 && e.y >= wy - 16 && e.y <= wy + CELLSIZE + 16) {
+                        damageTexts.push(new DamageText(e.x, e.y, 'CRUSH!!', '#ff1744', 17));
+                        gems.push({ x: e.x, y: e.y, val: 2 });
+                        enemies.splice(i, 1);
+                        kills++;
+                        crushed = true;
+                    }
+                }
+            });
+            if (crushed) {
+                shakeTime = 12;
+                playSfx('crush');
+            }
+
+            // 10칸 1자 라인 클리어 검사 (채워진 라인만 정확하게 제거하고 위 라인을 한 줄씩 내림!)
+            let clearedCount = 0;
+            for (let r = MATRIX_ROWS - 1; r >= 0; r--) {
+                if (matrixBoard[r].every(val => val !== 0)) {
+                    matrixBoard.splice(r, 1);
+                    matrixBoard.unshift(Array(MATRIX_COLS).fill(0));
+                    clearedCount++;
+                    r++; // 삭제된 자리를 다시 검사
+                }
+            }
+
+            if (clearedCount > 0) {
+                linesCleared += clearedCount;
+                shakeTime = 25;
+                playSfx('levelup');
+
+                const comboText = clearedCount >= 4 ? 'TETRIS! 999!' : `LINE CLEAR x${clearedCount}!`;
+                damageTexts.push(new DamageText(player.x, player.y - 45, comboText, '#00e5ff', 22));
+
+                enemies.forEach(e => {
+                    gems.push({ x: e.x, y: e.y, val: 3 });
+                    kills++;
+                });
+                enemies = [];
+            }
+
+            // [핵심 버그 수정!] 기존에 있던 보드 전체 리셋 코드를 완전히 삭제함!
+            // 블록이 꼭대기까지 꽉 차더라도 기존에 쌓아둔 블록들은 절대 초기화되거나 사라지지 않습니다.
+            currentTetro = new FallingTetramino();
+            canHoldThisTurn = true;
+        }
+    }
+
+    // 3. 10종 무기 작동
+    if (player.weapons.whip) {
+        weaponTimers.whip++;
+        const lv = player.weapons.whip;
+        if (weaponTimers.whip >= Math.floor(48 * cdMult)) {
+            weaponTimers.whip = 0;
+            playSfx('whip');
+            const scale = (1 + (lv - 1) * 0.30) * areaBonus;
+            const w = 95 * scale;
+            const h = 28 * scale;
+            const dir = player.facingRight ? 1 : -1;
+
+            whipEffects.push({ x: player.x + dir * (w * 0.45), y: player.y - 4, w, h, life: 12, dmg: (22 + lv * 8) * dmgMult });
+            if (lv + bonusCount >= 2) {
+                whipEffects.push({ x: player.x - dir * (w * 0.45), y: player.y - 16, w, h, life: 12, dmg: (22 + lv * 8) * dmgMult });
+            }
+            if (lv + bonusCount >= 4) {
+                whipEffects.push({ x: player.x, y: player.y - 55 * scale, w: w * 1.1, h: h * 0.9, life: 12, dmg: (22 + lv * 8) * dmgMult });
+                whipEffects.push({ x: player.x, y: player.y + 55 * scale, w: w * 1.1, h: h * 0.9, life: 12, dmg: (22 + lv * 8) * dmgMult });
+            }
+        }
+    }
+
+    if (player.weapons.bible) {
+        const lv = player.weapons.bible;
+        const count = lv + 1 + bonusCount;
+        const bookScale = (1 + (lv - 1) * 0.25) * areaBonus;
+        const radius = (65 + lv * 14) * areaBonus;
+        const speed = (0.055 + lv * 0.006) * speedBonus;
+
+        for (let i = 0; i < count; i++) {
+            const angle = animFrame * speed + (Math.PI * 2 / count) * i;
+            const bx = player.x + Math.cos(angle) * radius;
+            const by = player.y + Math.sin(angle) * radius;
+            const hitRadius = 20 * bookScale;
+
+            enemies.forEach(e => {
+                if (e.bibleHitCd <= 0 && Math.hypot(e.x - bx, e.y - by) < hitRadius) {
+                    hitEnemy(e, Math.floor((16 + lv * 6) * dmgMult), bx, by);
+                    e.bibleHitCd = 18;
+                }
+            });
+        }
+    }
+
+    if (player.weapons.garlic) {
+        const lv = player.weapons.garlic;
+        const gRadius = (48 + lv * 12) * areaBonus;
+        if (gameFrames % Math.max(8, Math.floor(20 * cdMult)) === 0) {
+            enemies.forEach(e => {
+                if (Math.hypot(e.x - player.x, e.y - player.y) < gRadius) {
+                    hitEnemy(e, Math.floor((8 + lv * 4) * dmgMult), player.x, player.y);
+                }
+            });
+        }
+    }
+
+    if (player.weapons.wand && enemies.length > 0) {
+        weaponTimers.wand++;
+        const lv = player.weapons.wand;
+        if (weaponTimers.wand >= Math.max(9, Math.floor((36 - lv * 3.5) * cdMult))) {
+            weaponTimers.wand = 0;
+            const sorted = [...enemies].sort((a, b) =>
+                Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y)
+            );
+            const shots = Math.min(sorted.length, 1 + Math.floor(lv / 2) + bonusCount);
+            const scale = (1 + (lv - 1) * 0.28) * areaBonus;
+
+            for (let i = 0; i < shots; i++) {
+                const target = sorted[i];
+                const angle = Math.atan2(target.y - player.y, target.x - player.x);
+                projectiles.push({
+                    type: 'wand', x: player.x, y: player.y,
+                    vx: Math.cos(angle) * 9 * speedBonus, vy: Math.sin(angle) * 9 * speedBonus,
+                    scale, radius: 6 * scale,
+                    dmg: Math.floor((18 + lv * 6) * dmgMult), pierce: 1 + Math.floor(lv / 2)
+                });
+            }
+            playSfx('hit');
+        }
+    }
+
+    if (player.weapons.axe) {
+        weaponTimers.axe++;
+        const lv = player.weapons.axe;
+        if (weaponTimers.axe >= Math.floor(62 * cdMult)) {
+            weaponTimers.axe = 0;
+            const count = 1 + Math.floor(lv / 1.5) + bonusCount;
+            const scale = (1 + (lv - 1) * 0.35) * areaBonus;
+            for (let i = 0; i < count; i++) {
+                projectiles.push({
+                    type: 'axe', x: player.x, y: player.y - 10,
+                    vx: (Math.random() - 0.5) * 7.5 * speedBonus, vy: (-9 - Math.random() * 2.5) * speedBonus,
+                    gravity: 0.26, scale, radius: 14 * scale,
+                    dmg: Math.floor((38 + lv * 14) * dmgMult), pierce: 4 + lv
+                });
+            }
+        }
+    }
+
+    if (player.weapons.knife) {
+        weaponTimers.knife++;
+        const lv = player.weapons.knife;
+        if (weaponTimers.knife >= Math.max(8, Math.floor((26 - lv * 2.2) * cdMult))) {
+            weaponTimers.knife = 0;
+            const baseAngle = player.facingRight ? 0 : Math.PI;
+            const count = lv + bonusCount;
+            const scale = (1 + (lv - 1) * 0.22) * areaBonus;
+
+            for (let i = 0; i < count; i++) {
+                const spread = (i - (count - 1) / 2) * 0.13;
+                const a = baseAngle + spread;
+                projectiles.push({
+                    type: 'knife', x: player.x, y: player.y,
+                    vx: Math.cos(a) * 11.5 * speedBonus, vy: Math.sin(a) * 11.5 * speedBonus,
+                    scale, radius: 7 * scale,
+                    dmg: Math.floor((15 + lv * 5) * dmgMult), pierce: 1 + Math.floor(lv / 3)
+                });
+            }
+            playSfx('hit');
+        }
+    }
+
+    if (player.weapons.firewand) {
+        weaponTimers.firewand++;
+        const lv = player.weapons.firewand;
+        if (weaponTimers.firewand >= Math.floor(70 * cdMult)) {
+            weaponTimers.firewand = 0;
+            const baseAngle = Math.random() * Math.PI * 2;
+            const count = 2 + lv + bonusCount;
+            const scale = (1 + (lv - 1) * 0.35) * areaBonus;
+
+            for (let i = 0; i < count; i++) {
+                const a = baseAngle + (i - (count - 1) / 2) * 0.20;
+                projectiles.push({
+                    type: 'fire', x: player.x, y: player.y,
+                    vx: Math.cos(a) * 6.8 * speedBonus, vy: Math.sin(a) * 6.8 * speedBonus,
+                    scale, radius: 10 * scale,
+                    dmg: Math.floor((34 + lv * 12) * dmgMult), pierce: 2 + lv
+                });
+            }
+        }
+    }
+
+    if (player.weapons.cross) {
+        weaponTimers.cross++;
+        const lv = player.weapons.cross;
+        if (weaponTimers.cross >= Math.floor(58 * cdMult)) {
+            weaponTimers.cross = 0;
+            const count = 1 + Math.floor(lv / 2) + bonusCount;
+            const scale = (1 + (lv - 1) * 0.30) * areaBonus;
+            for (let i = 0; i < count; i++) {
+                const a = (enemies[i] ? Math.atan2(enemies[i].y - player.y, enemies[i].x - player.x) : Math.random() * Math.PI * 2);
+                const spd = 8.5 * speedBonus;
+                projectiles.push({
+                    type: 'cross', x: player.x, y: player.y,
+                    vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+                    ax: -Math.cos(a) * 0.26 * speedBonus, ay: -Math.sin(a) * 0.26 * speedBonus,
+                    scale, radius: 12 * scale,
+                    dmg: Math.floor((26 + lv * 9) * dmgMult), pierce: 99
+                });
+            }
+        }
+    }
+
+    if (player.weapons.lightning && enemies.length > 0) {
+        weaponTimers.lightning++;
+        const lv = player.weapons.lightning;
+        if (weaponTimers.lightning >= Math.floor(68 * cdMult)) {
+            weaponTimers.lightning = 0;
+            playSfx('thunder');
+            const strikes = 1 + lv + bonusCount;
+            const blastRadius = (42 + lv * 10) * areaBonus;
+            for (let i = 0; i < strikes; i++) {
+                const target = enemies[Math.floor(Math.random() * enemies.length)];
+                if (!target) continue;
+                lightningStrikes.push({ x: target.x, y: target.y, radius: blastRadius, life: 14 });
+                enemies.forEach(e => {
+                    if (Math.hypot(e.x - target.x, e.y - target.y) <= blastRadius) {
+                        hitEnemy(e, Math.floor((32 + lv * 12) * dmgMult), target.x, target.y);
+                    }
+                });
+            }
+        }
+    }
+
+    if (player.weapons.santawater) {
+        weaponTimers.santawater++;
+        const lv = player.weapons.santawater;
+        if (weaponTimers.santawater >= Math.floor(82 * cdMult)) {
+            weaponTimers.santawater = 0;
+            const count = 1 + Math.floor(lv / 2) + bonusCount;
+            const zoneRadius = (36 + lv * 9) * areaBonus;
+            for (let i = 0; i < count; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const d = 50 + Math.random() * 110;
+                waterZones.push({
+                    x: player.x + Math.cos(a) * d,
+                    y: player.y + Math.sin(a) * d,
+                    radius: zoneRadius,
+                    life: 140 + lv * 20,
+                    dmg: Math.floor((10 + lv * 4) * dmgMult)
+                });
+            }
+        }
+    }
+
+    for (let i = waterZones.length - 1; i >= 0; i--) {
+        const wz = waterZones[i];
+        wz.life--;
+        if (wz.life % 15 === 0) {
+            enemies.forEach(e => {
+                if (Math.hypot(e.x - wz.x, e.y - wz.y) < wz.radius) {
+                    hitEnemy(e, wz.dmg, wz.x, wz.y);
+                }
+            });
+        }
+        if (wz.life <= 0) waterZones.splice(i, 1);
+    }
+
+    for (let i = lightningStrikes.length - 1; i >= 0; i--) {
+        lightningStrikes[i].life--;
+        if (lightningStrikes[i].life <= 0) lightningStrikes.splice(i, 1);
+    }
+
+    for (let i = whipEffects.length - 1; i >= 0; i--) {
+        const w = whipEffects[i];
+        w.life--;
+        if (w.life === 9) {
+            enemies.forEach(e => {
+                if (Math.abs(e.x - w.x) < w.w / 2 + 10 && Math.abs(e.y - w.y) < w.h / 2 + 10) {
+                    hitEnemy(e, Math.floor(w.dmg), player.x, player.y);
+                }
+            });
+        }
+        if (w.life <= 0) whipEffects.splice(i, 1);
+    }
+
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.gravity) p.vy += p.gravity;
+        if (p.ax) { p.vx += p.ax; p.vy += p.ay; }
+
+        if (Math.hypot(p.x - player.x, p.y - player.y) > 750) {
+            projectiles.splice(i, 1);
+            continue;
+        }
+
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (Math.hypot(p.x - e.x, p.y - e.y) < p.radius + 10) {
+                hitEnemy(e, p.dmg, p.x, p.y);
+                p.pierce--;
+                if (p.pierce <= 0) {
+                    projectiles.splice(i, 1);
+                    break;
+                }
+            }
+        }
+    }
+
+    // 4. 시간대별 몬스터 스폰
+    const timeDifficulty = 1 + (elapsedSec / 35);
+    const spawnInterval = Math.max(7, Math.floor(34 - elapsedSec * 0.18));
+    const batchCount = 1 + Math.floor(elapsedSec / 45);
+
+    const curMinute = Math.floor(elapsedSec / 60);
+    if (curMinute > lastBossMinute) {
+        lastBossMinute = curMinute;
+        const a = Math.random() * Math.PI * 2;
+        const bossHp = Math.floor(450 * timeDifficulty);
+        enemies.push({
+            type: 'boss',
+            x: player.x + Math.cos(a) * 450,
+            y: player.y + Math.sin(a) * 450,
+            hp: bossHp, maxHp: bossHp,
+            speed: 1.35 + curMinute * 0.1,
+            scale: 2.2,
+            flash: 0, bibleHitCd: 0
+        });
+        damageTexts.push(new DamageText(player.x, player.y - 60, `⚠️ WAVE ${curMinute} BOSS APPEARED!`, '#ff1744', 20));
+    }
+
+    if (gameFrames % spawnInterval === 0) {
+        for (let b = 0; b < batchCount; b++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 470 + Math.random() * 80;
+            const sx = Math.max(30, Math.min(WORLD_W - 30, player.x + Math.cos(angle) * dist));
+            const sy = Math.max(30, Math.min(WORLD_H - 30, player.y + Math.sin(angle) * dist));
+
+            let eType = 'goblin';
+            const r = Math.random();
+            if (elapsedSec > 90 && r < 0.35) eType = 'mushroom';
+            else if (elapsedSec > 40 && r < 0.55) eType = 'skeleton';
+            else if (r < 0.28) eType = 'eye';
+
+            const baseHp = eType === 'eye' ? 18 : eType === 'goblin' ? 28 : eType === 'skeleton' ? 45 : 65;
+            const baseSpd = eType === 'eye' ? 1.55 : eType === 'goblin' ? 1.18 : eType === 'skeleton' ? 1.25 : 1.05;
+
+            enemies.push({
+                type: eType,
+                x: sx, y: sy,
+                hp: Math.floor(baseHp * timeDifficulty),
+                maxHp: Math.floor(baseHp * timeDifficulty),
+                speed: baseSpd * (1 + Math.min(0.8, elapsedSec * 0.003)),
+                scale: 1.0,
+                flash: 0,
+                bibleHitCd: 0
+            });
+        }
+    }
+
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (e.flash > 0) e.flash--;
+        if (e.bibleHitCd > 0) e.bibleHitCd--;
+
+        const dx = player.x - e.x;
+        const dy = player.y - e.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist > 920 && e.type !== 'boss') {
+            const a = Math.random() * Math.PI * 2;
+            e.x = player.x + Math.cos(a) * 500;
+            e.y = player.y + Math.sin(a) * 500;
+            continue;
+        }
+
+        if (dist > 0) {
+            const nextEx = e.x + (dx / dist) * e.speed;
+            const nextEy = e.y + (dy / dist) * e.speed;
+
+            if (!isMonsterBlocked(nextEx, nextEy)) {
+                e.x = nextEx;
+                e.y = nextEy;
+            } else {
+                if (!isMonsterBlocked(nextEx, e.y)) e.x = nextEx;
+                else if (!isMonsterBlocked(e.x, nextEy)) e.y = nextEy;
+                else {
+                    e.x -= (dx / dist) * 1.5;
+                    e.y -= (dy / dist) * 1.5;
+                }
+            }
+        }
+
+        if (dist < (e.type === 'boss' ? 26 : 16)) {
+            player.hp -= (e.type === 'boss' ? 0.8 : 0.35);
+            player.flash = 3;
+            if (player.hp <= 0) {
+                player.hp = 0;
+                isGameOver = true;
+            }
+        }
+
+        if (e.hp <= 0) {
+            gems.push({ x: e.x, y: e.y, val: e.type === 'boss' ? 15 : e.type === 'mushroom' ? 3 : e.type === 'skeleton' ? 2 : 1 });
+            enemies.splice(i, 1);
+            kills++;
+        }
+    }
+
+    // 5. 보석 흡수
+    for (let i = gems.length - 1; i >= 0; i--) {
+        const g = gems[i];
+        const dist = Math.hypot(player.x - g.x, player.y - g.y);
+        if (dist < magnetRange) {
+            g.x += ((player.x - g.x) / dist) * 9.0;
+            g.y += ((player.y - g.y) / dist) * 9.0;
+        }
+        if (dist < 20) {
+            player.exp += g.val;
+            gems.splice(i, 1);
+            playSfx('gem');
+
+            if (player.exp >= player.nextExp) {
+                player.exp -= player.nextExp;
+                player.level++;
+                player.nextExp = Math.floor(player.nextExp * 1.28 + 3);
+                openItemModal(false);
+            }
+        }
+    }
+
+    for (let i = damageTexts.length - 1; i >= 0; i--) {
+        damageTexts[i].update();
+        if (damageTexts[i].life <= 0) damageTexts.splice(i, 1);
+    }
+}
+
+function hitEnemy(e, dmg, srcX, srcY) {
+    const finalDmg = Math.max(1, Math.floor(dmg * (0.85 + Math.random() * 0.3)));
+    e.hp -= finalDmg;
+    e.flash = 5;
+    const dx = e.x - srcX;
+    const dy = e.y - srcY;
+    const d = Math.hypot(dx, dy) || 1;
+    const kb = e.type === 'boss' ? 3 : 12;
+    e.x += (dx / d) * kb;
+    e.y += (dy / d) * kb;
+    damageTexts.push(new DamageText(e.x, e.y, `${finalDmg}`, '#ffffff', 14));
+}
+
+// =========================================================================
+// 9. 렌더링
+// =========================================================================
+function render() {
+    let camX = Math.max(0, Math.min(WORLD_W - VIEW_W, player.x - VIEW_W / 2));
+    let camY = Math.max(0, Math.min(WORLD_H - VIEW_H, player.y - VIEW_H / 2));
+
+    let sx = 0, sy = 0;
+    if (shakeTime > 0) {
+        shakeTime--;
+        sx = (Math.random() - 0.5) * 9;
+        sy = (Math.random() - 0.5) * 9;
+    }
+
+    ctx.save();
+    ctx.translate(-camX + sx, -camY + sy);
+
+    drawOpenWorldBackground(camX, camY);
+
+    // 1. 18행 고정 10열 요새 매트릭스 렌더링
+    drawFortressMatrix(matrixWorldX, matrixWorldY);
+
+    // 2. 성수 장판
+    waterZones.forEach(wz => {
+        ctx.fillStyle = 'rgba(0, 176, 255, 0.32)';
+        ctx.beginPath(); ctx.arc(wz.x, wz.y, wz.radius, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(128, 216, 255, 0.75)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    });
+
+    // 3. 마늘 결계
+    if (player.weapons.garlic) {
+        const lv = player.weapons.garlic;
+        const areaBonus = 1 + (player.accessories.candelabrador || 0) * 0.25;
+        const gRadius = (48 + lv * 12) * areaBonus;
+        ctx.strokeStyle = 'rgba(255, 235, 180, 0.45)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(player.x, player.y, gRadius, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 245, 200, 0.10)';
+        ctx.fill();
+    }
+
+    // 4. 요새 내 영구 보존 에테르 룬 석판 렌더링 (절대 안 사라짐!)
+    for (let r = 0; r < MATRIX_ROWS; r++) {
+        for (let c = 0; c < MATRIX_COLS; c++) {
+            if (matrixBoard[r][c] !== 0) {
+                drawStoneTile(matrixWorldX + c * CELLSIZE, matrixWorldY + r * CELLSIZE, 'placed');
+            }
+        }
+    }
+
+    // 5. 낙하 중인 블록 & 고스트 블록
+    if (currentTetro) {
+        const ghostR = currentTetro.getGhostR(matrixBoard);
+        const ghostOffset = ghostR - currentTetro.r;
+        if (ghostOffset > 0) {
+            currentTetro.currentCells(0, ghostOffset).forEach(cell => {
+                drawStoneTile(matrixWorldX + cell.c * CELLSIZE, matrixWorldY + cell.r * CELLSIZE, 'ghost');
+            });
+        }
+        currentTetro.currentCells().forEach(cell => {
+            drawStoneTile(matrixWorldX + cell.c * CELLSIZE, matrixWorldY + cell.r * CELLSIZE, 'falling');
+        });
+    }
+
+    // 6. 크리스탈
+    gems.forEach(g => {
+        if (g.x >= camX - 20 && g.x <= camX + VIEW_W + 20 && g.y >= camY - 20 && g.y <= camY + VIEW_H + 20) {
+            drawCrystalGem(g.x, g.y, g.val);
+        }
+    });
+
+    // 7. 킹 바이블
+    if (player.weapons.bible) {
+        const lv = player.weapons.bible;
+        const areaBonus = 1 + (player.accessories.candelabrador || 0) * 0.25;
+        const bonusCount = player.accessories.duplicator || 0;
+        const speedBonus = 1 + (player.accessories.bracer || 0) * 0.20;
+        const count = lv + 1 + bonusCount;
+        const bookScale = (1 + (lv - 1) * 0.25) * areaBonus;
+        const radius = (65 + lv * 14) * areaBonus;
+        const speed = (0.055 + lv * 0.006) * speedBonus;
+
+        for (let i = 0; i < count; i++) {
+            const angle = animFrame * speed + (Math.PI * 2 / count) * i;
+            drawKingBibleBook(player.x + Math.cos(angle) * radius, player.y + Math.sin(angle) * radius, bookScale);
+        }
+    }
+
+    // 8. 채찍 이펙트
+    whipEffects.forEach(w => {
+        ctx.fillStyle = 'rgba(255, 245, 190, 0.85)';
+        ctx.beginPath();
+        ctx.ellipse(w.x, w.y, w.w / 2, w.h / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ff9800';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+    });
+
+    // 9. 번개 낙뢰 이펙트
+    lightningStrikes.forEach(ls => {
+        ctx.strokeStyle = '#ffea00';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(ls.x - 10, ls.y - 350);
+        ctx.lineTo(ls.x + 8, ls.y - 160);
+        ctx.lineTo(ls.x - 6, ls.y - 70);
+        ctx.lineTo(ls.x, ls.y);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.45)';
+        ctx.beginPath(); ctx.arc(ls.x, ls.y, ls.radius, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // 10. 투사체
+    projectiles.forEach(p => {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(p.scale || 1, p.scale || 1);
+        if (p.type === 'wand') {
+            ctx.fillStyle = '#00e5ff';
+            ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+        } else if (p.type === 'axe') {
+            ctx.rotate(animFrame * 0.35);
+            ctx.fillStyle = '#cfd8dc';
+            ctx.beginPath(); ctx.arc(0, -5, 11, 0, Math.PI); ctx.fill();
+            ctx.fillStyle = '#795548';
+            ctx.fillRect(-2.5, -7, 5, 16);
+        } else if (p.type === 'knife') {
+            ctx.rotate(Math.atan2(p.vy, p.vx));
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(-7, -2.5, 14, 5);
+            ctx.fillStyle = '#ffd54f';
+            ctx.fillRect(-3, -4, 2, 8);
+        } else if (p.type === 'fire') {
+            ctx.fillStyle = '#ff3d00';
+            ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffea00';
+            ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, Math.PI * 2); ctx.fill();
+        } else if (p.type === 'cross') {
+            ctx.rotate(animFrame * 0.4);
+            ctx.fillStyle = '#ffd700';
+            ctx.fillRect(-3, -11, 6, 22);
+            ctx.fillRect(-11, -3, 22, 6);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-3, -11, 6, 22);
+        }
+        ctx.restore();
+    });
+
+    // 11. 몬스터 군단
+    enemies.forEach(e => {
+        if (e.x >= camX - 40 && e.x <= camX + VIEW_W + 40 && e.y >= camY - 40 && e.y <= camY + VIEW_H + 40) {
+            drawEnemyEntity(e, animFrame, player.x);
+        }
+    });
+
+    // 12. 플레이어
+    drawHeroKnight(player.x, player.y, animFrame, player.isMoving, player.facingRight, player.flash);
+
+    const hpBarW = 40;
+    const hpBarH = 5;
+    const hpRatio = Math.max(0, player.hp / player.maxHp);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(player.x - hpBarW / 2, player.y + 16, hpBarW, hpBarH);
+    ctx.fillStyle = '#d50000';
+    ctx.fillRect(player.x - hpBarW / 2, player.y + 16, hpBarW * hpRatio, hpBarH);
+
+    damageTexts.forEach(dt => dt.draw());
+
+    ctx.restore();
+
+    // =========================================================================
+    // 10. 상단 HUD & 미니맵
+    // =========================================================================
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, VIEW_W, TOP_BAR_H);
+
+    const expRatio = Math.min(1, player.exp / player.nextExp);
+    ctx.fillStyle = '#0055ff';
+    ctx.fillRect(2, 2, (VIEW_W - 4) * expRatio, TOP_BAR_H - 4);
+
+    ctx.strokeStyle = '#c8aa32';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, VIEW_W - 2, TOP_BAR_H - 2);
+
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'right';
+    ctx.fillText(`LV ${player.level}`, VIEW_W - 8, 17);
+    ctx.textAlign = 'left';
+
+    const slotSize = 26;
+    const startX = 6;
+    const startY = TOP_BAR_H + 6;
+    const weaponKeys = Object.keys(player.weapons);
+    const accKeys = Object.keys(player.accessories);
+
+    for (let i = 0; i < 6; i++) {
+        const sx = startX + i * (slotSize + 2);
+        const sy = startY;
+        ctx.fillStyle = 'rgba(120, 130, 120, 0.55)';
+        ctx.fillRect(sx, sy, slotSize, slotSize);
+        ctx.strokeStyle = '#d0d7de';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sx, sy, slotSize, slotSize);
+
+        const wId = weaponKeys[i];
+        if (wId) {
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.scale(slotSize / 42, slotSize / 42);
+            ITEM_DB[wId].drawIcon(ctx);
+            ctx.restore();
+
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillStyle = '#000000';
+            ctx.fillText(player.weapons[wId], sx + slotSize - 7, sy + slotSize - 1);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(player.weapons[wId], sx + slotSize - 8, sy + slotSize - 2);
+        }
+    }
+
+    for (let i = 0; i < 6; i++) {
+        const sx = startX + i * (slotSize + 2);
+        const sy = startY + slotSize + 3;
+        ctx.fillStyle = 'rgba(100, 110, 100, 0.4)';
+        ctx.fillRect(sx, sy, slotSize, slotSize);
+        ctx.strokeStyle = '#c0c8c0';
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(sx, sy, slotSize, slotSize);
+        ctx.setLineDash([]);
+
+        const aId = accKeys[i];
+        if (aId) {
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.scale(slotSize / 42, slotSize / 42);
+            ITEM_DB[aId].drawIcon(ctx);
+            ctx.restore();
+
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillStyle = '#000000';
+            ctx.fillText(player.accessories[aId], sx + slotSize - 7, sy + slotSize - 1);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(player.accessories[aId], sx + slotSize - 8, sy + slotSize - 2);
+        }
+    }
+
+    const boxY = startY + slotSize * 2 + 12;
+    const boxW = 54;
+    const boxH = 54;
+
+    ctx.fillStyle = 'rgba(20, 24, 32, 0.72)';
+    ctx.fillRect(startX, boxY, boxW, boxH);
+    ctx.strokeStyle = canHoldThisTurn ? '#ffd700' : '#6e7681';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(startX, boxY, boxW, boxH);
+    ctx.font = 'bold 9px monospace';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('HOLD[C]', startX + 5, boxY + 12);
+    drawMiniTetro(ctx, holdTetroType, startX + boxW / 2 + 2, boxY + boxH / 2 + 6, 8);
+
+    const nextX = startX + boxW + 8;
+    ctx.fillStyle = 'rgba(20, 24, 32, 0.72)';
+    ctx.fillRect(nextX, boxY, boxW, boxH);
+    ctx.strokeStyle = '#8b949e';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(nextX, boxY, boxW, boxH);
+    ctx.fillStyle = '#d0d7de';
+    ctx.fillText('NEXT', nextX + 14, boxY + 12);
+    drawMiniTetro(ctx, nextTetroType, nextX + boxW / 2 + 2, boxY + boxH / 2 + 6, 8);
+
+    const totalSec = Math.floor(gameFrames / 60);
+    const min = Math.floor(totalSec / 60);
+    const sec = String(totalSec % 60).padStart(2, '0');
+    const waveLv = 1 + Math.floor(totalSec / 30);
+
+    ctx.font = 'bold 26px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000000';
+    ctx.fillText(`${min} : ${sec}`, VIEW_W / 2 + 2, TOP_BAR_H + 28);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${min} : ${sec}`, VIEW_W / 2, TOP_BAR_H + 26);
+
+    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(`🔥 WAVE Lv.${waveLv}`, VIEW_W / 2, TOP_BAR_H + 44);
+
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillStyle = '#000000';
+    ctx.fillText(`${kills}`, VIEW_W - 32, TOP_BAR_H + 21);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${kills}`, VIEW_W - 33, TOP_BAR_H + 20);
+
+    const skX = VIEW_W - 18;
+    const skY = TOP_BAR_H + 14;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(skX, skY, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(skX - 3, skY + 3, 6, 4);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(skX - 3, skY - 2, 2, 2);
+    ctx.fillRect(skX + 1, skY - 2, 2, 2);
+
+    ctx.fillStyle = '#d4b81c';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(VIEW_W - 36, TOP_BAR_H + 38, 6, 38);
+    ctx.strokeRect(VIEW_W - 36, TOP_BAR_H + 38, 6, 38);
+    ctx.fillRect(VIEW_W - 22, TOP_BAR_H + 38, 6, 38);
+    ctx.strokeRect(VIEW_W - 22, TOP_BAR_H + 38, 6, 38);
+    ctx.textAlign = 'left';
+
+    // 미니맵
+    const mapSize = 76;
+    const mapX = VIEW_W - mapSize - 10;
+    const mapY = VIEW_H - mapSize - 10;
+    ctx.fillStyle = 'rgba(15, 20, 15, 0.65)';
+    ctx.fillRect(mapX, mapY, mapSize, mapSize);
+    ctx.strokeStyle = '#c8aa32';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(mapX, mapY, mapSize, mapSize);
+
+    const mXm = mapX + (matrixWorldX / WORLD_W) * mapSize;
+    const mYm = mapY + (matrixWorldY / WORLD_H) * mapSize;
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.45)';
+    ctx.fillRect(mXm, mYm, (MATRIX_COLS * CELLSIZE / WORLD_W) * mapSize + 2, (MATRIX_ROWS * CELLSIZE / WORLD_H) * mapSize + 2);
+
+    ctx.fillStyle = '#ff4b5f';
+    enemies.forEach(e => {
+        const ex = mapX + (e.x / WORLD_W) * mapSize;
+        const ey = mapY + (e.y / WORLD_H) * mapSize;
+        ctx.fillRect(ex, ey, e.type === 'boss' ? 4 : 2, e.type === 'boss' ? 4 : 2);
+    });
+    const pxMap = mapX + (player.x / WORLD_W) * mapSize;
+    const pyMap = mapY + (player.y / WORLD_H) * mapSize;
+    ctx.fillStyle = '#00e5ff';
+    ctx.beginPath(); ctx.arc(pxMap, pyMap, 3, 0, Math.PI * 2); ctx.fill();
+
+    if (isPaused && document.getElementById('itemModal').style.display === 'none') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 34px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('PAUSED', VIEW_W / 2, VIEW_H / 2);
+        ctx.textAlign = 'left';
+    }
+
+    if (isGameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        ctx.fillStyle = '#ff334b';
+        ctx.font = 'bold 42px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', VIEW_W / 2, VIEW_H / 2 - 20);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '18px sans-serif';
+        ctx.fillText(`생존 시간: ${min}분 ${sec}초  |  처치: ${kills}  |  석판 폭발: ${linesCleared}`, VIEW_W / 2, VIEW_H / 2 + 20);
+        ctx.fillStyle = '#ffd700';
+        ctx.fillText('[ R ] 키를 눌러 다시 시작', VIEW_W / 2, VIEW_H / 2 + 60);
+        ctx.textAlign = 'left';
+    }
+}
+
+function loop() {
+    update();
+    render();
+    requestAnimationFrame(loop);
+}
+
+openItemModal(true);
+requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
